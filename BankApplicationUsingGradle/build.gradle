@@ -1,0 +1,29 @@
+apply plugin :'java'
+
+//apply plugin : 'application'
+//apply plugin: 'sonarqube-runner' 
+//apply plugin: "sonar"
+
+
+
+
+apply plugin: 'sonar-runner'
+//repositories
+//{
+  // maven
+   //{
+     // url //"http://10.109.32.183:8081/nexus/content/groups/public"
+   //}
+//}
+repositories { jcenter() }
+dependencies { testCompile "org.mockito:mockito-core:1.+" }
+
+dependencies {
+  testCompile 'junit:junit:4.12'
+}
+sonarRunner {
+ sonarProperties {
+  property "sonar.projectName", "bankapp"
+  property "sonar.projectKey", "org.sonarqube:java-gradle-simple"
+ }
+}
