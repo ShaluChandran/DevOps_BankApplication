@@ -1,0 +1,270 @@
+ORCJsonMapper------avro
+
+package com.target.dl;
+
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonStreamParser;
+
+import org.apache.avro.generic.GenericRecord;
+import org.apache.avro.mapred.AvroKey;
+import org.apache.hadoop.hive.ql.io.orc.OrcSerde;
+import org.apache.hadoop.hive.ql.io.orc.OrcSerde.*;
+import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector;
+import org.apache.hadoop.hive.serde2.typeinfo.TypeInfo;
+import org.apache.hadoop.hive.serde2.typeinfo.TypeInfoUtils;
+import org.apache.hadoop.io.*;
+import org.apache.hadoop.mapreduce.Mapper;
+import org.apache.orc.TypeDescription;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+
+
+public class ORCJsonMapper extends Mapper<AvroKey<GenericRecord>,NullWritable,NullWritable,Writable> {
+	
+    private final NullWritable nada = NullWritable.get();
+    private List<String> fieldNames;
+    private JsonConverter[] converters;
+    private OrcSerde serde;
+    private ObjectInspector objectInspector;
+
+    interface JsonConverter {
+        void convert(JsonElement value, List column, int index);
+    }
+
+    @Override
+    protected void setup(Context context) throws IOException, InterruptedException {
+        super.setup(context);
+
+        serde = new OrcSerde();
+        String types = "struct<pos_log_transaction_type:string,legacy_transaction_id:string,transaction_id:string,transaction_post_date_time:string,source_app:string,business_unit:struct<location_id:string,legacy_location_id:string>,origination_channel:struct<channel_id:string,fulfillment_type:string,division_code:string,version_id:string>,ship_from_address:struct<address_line:string,city:string,territory:string,postal_code:string,postal_code_extension:string>,begin_date_time:string,end_date_time:string,begin_date_time_iso:string,end_date_time_iso:string,operator_id:string,receipt_date_time:string,order_date:string,register_id:string,register_sequence_number:string,training_mode:string,transaction_net_amount:string,transaction_status:string,transaction_type_code:string,customer_order_number:string,customer_invoice_number:string,customer_shipment_number:string,release_id:string,guest_information:struct<guest_tracking_id:string,loyalty_barcode:string,employee_id:string,cartwheel_barcode:string>,ship_to_destination:struct<store_id:string,address_line:string,city:string,territory:string,postal_code:string,postal_code_extension:string>,related_transactions:array<struct<related_type_code:string,legacy_transaction_id:string,customer_order_number:string>>,line_items:array<struct<line_item_sequence_number:string,line_item_type:string,barcode:string,barcode_type:string,serial_number:string,dpci:string,tcin:string,inventory_tcin:string,vendor_id:string,vendor_type:string,seller_id:string,weight:string,item_voided:string,regular_unit_price:string,quantity:string,unit_of_measure:string,selling_unit_price:string,extended_net_amount:string,tax_area_id:string,tax_class_code:string,vendor_return_financial_disposition:string,refund_code:string,return_policies:array<struct<end_date:string,guest_type:string,policy_days:string,policy_id:string>>,line_related_transaction:struct<original_legacy_transaction_id:string,original_line_item_sequence_number:string>,service_charges:array<struct<line_item_sequence_number:string,line_item_type:string,dpci:string,tcin:string,inventory_tcin:string,item_voided:string,regular_unit_price:string,quantity:string,unit_of_measure:string,selling_unit_price:string,extended_net_amount:string,tax_area_id:string,tax_class_code:string>>,price_modifiers:array<struct<price_modifier_sequence_number:string,price_modifier_type:string,price_modifier_reason_code:string,promotion_id:string,original_amount:string,adjustment_amount:string>>,taxes:array<struct<tax_sequence_number:string,tax_override_code:string,tax_type_code:string,tax_percent:string,tax_rate_code:string,tax_voided:string,taxable_amount:string,tax_amount:string,tax_exempt:string,tax_exempt_amount:string>>>>,price_modifier_summaries:array<struct<price_modifier_event_sequence_number:string,price_modifier_reason_code:string,price_modifier_type:string,promotion_id:string,price_modifier_percent:string,price_modifier_amount:string,pre_modifier_sales_total_amount:string,price_modifier_calculation_code:string,price_modifier_voided:string,price_variance_reason_code:string,allocated_to_item:string,assigned_dpci:string,cartwheel_flag:string,related_line_items:array<struct<line_item_sequence_number:string>>>>,tax_summaries:array<struct<event_sequence_number:string,tax_type:string,tax_table_code:string,tax_type_code:string,tax_override_code:string,tax_percent:string,tax_rate_code:string,tax_source_code:string,tax_voided:string,taxable_amount:string,tax_amount:string,tax_exempt:string,tax_exempt_amount:string,tax_related_line_items:array<struct<line_item_sequence_number:string>>>>,tender_summaries:array<struct<tender_sequence_number:string,tender_tracking_id:string,tender_tran_type:string,tender_type_code:string,merchant_id:string,order_type:string,tender_document_number:string,gl_account:string,currency_code:string,tender_amount:string,tender_entry_method:string,cash_back_amount:string,tender_voided:string,credit_information:struct<charge_count:string,charge_sequence:string,card_token:string,external_token:string,token_type:string,token_status:string,bank_card_type:string,chip_read_flag:string,expiration_month:string,expiration_year:string,debit_network:string,stringerchange_profile_code:string,cardholder_verification_result:string,trace_audit_number:string,merchant_type_code:string,terminal_country_code:string,terminal_serial_id:string,terminal_verification_result:string,terminal_capability:string,application_version:string,application_data:string,application_transaction_count:string,device_form_factor:string,transaction_type_code:string,card_subtype:string>,authorization:struct<authorization_amount:string,authorization_response_cryptogram:string,authorization_response:string,cavv:string,cavv_response_code:string,avv:string,cryptogram_type_code:string,cryptogram_code:string,cryptogram_random_string:string,market_specific_authorization_code:string,pos_data_text:string,service_code:string,approval_code:string,approval_id:string,approval_date_time:string,error_code:string,receive_timestamp:string,response_code:string,request_id:string,send_timestamp:string>,tender_related_line_items:array<struct<line_item_sequence_number:string>>>>>";
+        TypeDescription schema = TypeDescription.fromString(types);
+        TypeInfo typeInfo = TypeInfoUtils.getTypeInfoFromTypeString(types);
+        objectInspector = TypeInfoUtils.getStandardJavaObjectInspectorFromTypeInfo(typeInfo);
+        this.fieldNames = schema.getFieldNames();
+        List<TypeDescription> fieldTypes = schema.getChildren();
+        this.converters = new JsonConverter[fieldTypes.size()];
+        for(int c = 0; c < converters.length; ++c) {
+            converters[c] = createConverter(fieldTypes.get(c));
+        }
+
+    }
+
+      private static JsonConverter createConverter(TypeDescription schema) {
+        switch (schema.getCategory()) {
+            case BYTE:
+            case SHORT:
+            case INT:
+            case LONG:
+            case FLOAT:
+            case DOUBLE:
+            case CHAR:
+            case VARCHAR:
+            case STRING:
+            case DECIMAL:
+            case TIMESTAMP:
+            case BINARY:
+            case BOOLEAN:
+                return new StringColumnConverter();
+            case STRUCT:
+                return new StructColumnConverter(schema);
+            case LIST:
+                return new ListColumnConverter(schema);
+            default:
+                throw new IllegalArgumentException("Unhandled type " + schema);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    static class StringColumnConverter implements JsonConverter {
+        public void convert(JsonElement value, List column , int index) {
+            if (value == null || value.isJsonNull()) {
+                    column.add(index,null);
+                } else {
+                try {
+                    //noinspection unchecked
+                    column.add(index,value.getAsString());
+                } catch (Exception e){
+                    e.printStackTrace();
+                }
+                }
+            }
+        }
+
+    @SuppressWarnings("unchecked")
+    static class StructColumnConverter implements JsonConverter {
+        private final JsonConverter[] childrenConverters;
+        private final List<String> fieldNames;
+
+        public StructColumnConverter(TypeDescription schema) {
+            List<TypeDescription> kids = schema.getChildren();
+            childrenConverters = new JsonConverter[kids.size()];
+            for(int c=0; c < childrenConverters.length; ++c) {
+                childrenConverters[c] = createConverter(kids.get(c));
+            }
+            fieldNames = schema.getFieldNames();
+        }
+        public void convert(JsonElement value, List column, int index) {
+
+            if (value == null || value.isJsonNull()) {
+                column.add(index,null);
+            } else {
+                JsonObject obj = value.getAsJsonObject();
+                List<Object> childStruct = new ArrayList<>();
+                for (int c = 0; c < childrenConverters.length; ++c) {
+                    JsonElement elem = obj.get(fieldNames.get(c));
+                    childrenConverters[c].convert(elem, childStruct, c);
+                }
+                column.add(index,childStruct);
+            }
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    static class ListColumnConverter implements JsonConverter {
+        private final JsonConverter childrenConverter;
+
+        public ListColumnConverter(TypeDescription schema) {
+            childrenConverter = createConverter(schema.getChildren().get(0));
+        }
+
+        public void convert(JsonElement value, List column, int index) {
+
+            if (value == null || value.isJsonNull()) {
+                column.add(index,null);
+            } else {
+
+                JsonArray obj = value.getAsJsonArray();
+
+                if (childrenConverter instanceof StructColumnConverter) {
+                    List<Object> childList = new ArrayList<>();
+                    for (int c = 0; c < obj.size(); ++c) {
+                        childrenConverter.convert(obj.get(c), childList, c);
+                    }
+                    column.add(index, childList);
+
+                } else {
+                    List<Object> parentList = new ArrayList<>();
+                    for (int c = 0; c < obj.size(); ++c) {
+                        parentList.add(obj.get(c));
+                    }
+                    column.add(index, parentList);
+                }
+            }
+        }
+    }
+
+
+    @Override
+    protected void map(AvroKey<GenericRecord> key, NullWritable value, Context context) throws IOException, InterruptedException {
+
+    	String inputJson = key.datum().toString();
+        JsonStreamParser parser = new JsonStreamParser(inputJson);
+        JsonObject elem = parser.next().getAsJsonObject().get("transaction").getAsJsonObject();
+        List<Object> struct = new ArrayList<>(converters.length);
+
+        for(int c=0; c < converters.length; ++c) {
+            JsonElement field = elem.get(fieldNames.get(c));
+
+            if (field.isJsonNull()) {
+                struct.add(c,null);
+            } else {
+                converters[c].convert(field, struct, c);
+            }
+
+        }
+        Writable row = serde.serialize(struct, objectInspector);
+        context.write(nada, row);
+    }
+}
+
+------------------------------------------------------------------------------------------------
+
+package com.target.dl;
+
+import org.apache.avro.mapreduce.AvroKeyInputFormat;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.io.NullWritable;
+import org.apache.hadoop.io.Writable;
+import org.apache.hadoop.mapreduce.Job;
+import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
+import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
+import org.apache.hadoop.util.GenericOptionsParser;
+import java.io.IOException;
+import org.apache.hadoop.hive.ql.io.orc.OrcNewOutputFormat;
+
+public class Driver {
+
+    public static void main(String[] args) throws IOException, ClassNotFoundException, InterruptedException {
+        Configuration configuration = new Configuration();
+
+        String[] otherArgs = new GenericOptionsParser(configuration, args).getRemainingArgs();
+        Job job = Job.getInstance(configuration,"ORC Driver");
+        job.setJarByClass(Driver.class);
+        job.setInputFormatClass(AvroKeyInputFormat.class);
+        job.setMapperClass(ORCJsonMapper.class);
+        job.setOutputFormatClass(OrcNewOutputFormat.class);
+        job.setOutputKeyClass(NullWritable.class);
+        job.setOutputValueClass(Writable.class);
+        job.setNumReduceTasks(0);
+
+        FileSystem hdfs = FileSystem.get(configuration);
+        if (hdfs.exists(new Path(otherArgs[1])))
+            hdfs.delete(new Path(otherArgs[1]), true);
+
+        FileInputFormat.addInputPath(job, new Path(otherArgs[0]));
+        FileOutputFormat.setOutputPath(job, new Path(otherArgs[1]));
+        System.exit(job.waitForCompletion(true) ? 0 : 1);
+
+    }
+}
+
+------------------------------------------------------------------------------------------------------
+
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.target</groupId>
+    <artifactId>dl</artifactId>
+    <version>1.0-SNAPSHOT</version>
+    <dependencies>
+        <dependency>
+            <groupId>org.apache.orc</groupId>
+            <artifactId>orc-mapreduce</artifactId>
+            <version>1.1.0</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.hadoop</groupId>
+            <artifactId>hadoop-mapreduce-client-core</artifactId>
+            <version>2.7.2</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.hadoop</groupId>
+            <artifactId>hadoop-common</artifactId>
+            <version>2.7.2</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.hadoop</groupId>
+            <artifactId>hadoop-mapreduce-client-jobclient</artifactId>
+            <version>2.7.2</version>
+        </dependency>
+     
+
+        <!-- https://mvnrepository.com/artifact/com.google.code.gson/gson -->
+        <dependency>
+            <groupId>com.google.code.gson</groupId>
+            <artifactId>gson</artifactId>
+            <version>2.3.1</version>
+        </dependency>
+
+    </dependencies>
+    
+
+</project>
