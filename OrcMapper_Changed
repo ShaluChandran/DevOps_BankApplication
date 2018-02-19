@@ -1,0 +1,186 @@
+package com.target.dl;
+
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonStreamParser;
+import org.apache.hadoop.hive.ql.io.orc.OrcSerde;
+import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector;
+import org.apache.hadoop.hive.serde2.typeinfo.TypeInfo;
+import org.apache.hadoop.hive.serde2.typeinfo.TypeInfoUtils;
+import org.apache.hadoop.io.*;
+import org.apache.hadoop.mapreduce.Mapper;
+import org.apache.orc.TypeDescription;
+import java.io.IOException;
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.List;
+
+
+public class ORCJsonMapper extends Mapper<LongWritable,Text,NullWritable,Writable> {
+
+    private final NullWritable nada = NullWritable.get();
+    private List<String> fieldNames;
+    private JsonConverter[] converters;
+    private OrcSerde serde;
+    private ObjectInspector objectInspector;
+
+    interface JsonConverter {
+        void convert(JsonElement value, List column, int index);
+    }
+
+    @Override
+    protected void setup(Context context) throws IOException, InterruptedException {
+        super.setup(context);
+
+        serde = new OrcSerde();
+        String types = "struct<action:string,bill_to_address:struct<address_id:string,address_key:string,address_line1:string,address_line2:string,address_line3:string,city:string,country:string,email_id:string,first_name:string,last_name:string,mobile:string,phone:string,state:string,title:string,zip_code:string>,customer:struct<bill_to_id:string,email_id:string,first_name:string,last_name:string,phone_number:string>,entry_type:string,is_purchased_as_guest:string,max_order_status:string,min_order_status:string,nominee:struct<email_id:string,first_name:string,last_name:string,phone_number:string>,oms_order_key:string,order_lines:array<struct<channel_line_id:string,charges:array<struct<charge_level:string,charge_name:string,charge_type:string,charge_value:string,reference:string>>,event_destination_id:string,fulfillment_spec:struct<fulfillment_options:array<string>,fulfillment_type:string,guest_promised_delivery_enddate:string,guest_promised_delivery_startdate:string,guest_selected_shipment_option:string,is_back_order:string,is_pre_order:string,level_of_service:struct<service_code:string,service_name:string>,managed_delivery_date_type:string,pick_up_window:string,ship_node:struct<node_id:string>,ship_to_address:struct<address_id:string,address_key:string,address_line1:string,address_line2:string,address_line3:string,city:string,country:string,email_id:string,first_name:string,guest_address_type:string,last_name:string,mobile:string,phone:string,state:string,title:string,zip_code:string>>,instructions:struct<instruction_text:string,instruction_type:string>,is_gift_wrap:string,is_opt_in:string,is_pickup_extended:string,is_repromised:string,is_sts_cancel_hold:string,item:struct<is_bundle_parent:string,tcin:string,unit_of_measure:string>,line_number:string,list_price:string,order_line_key:string,quantity:string,registry:struct<registry_id:string,registry_name:string>,relationship:struct<parent_order_line_id:string,relation_ship:string>,routing:string,statuses:array<struct<quantity:string,status_code:string,status_date:string,status_description:string>>,taxes:array<struct<tax_name:string,tax_type:string,tax_value:string>>,unit_price:string>>,order_number:string,order_placed:string,order_sub_type:string,order_type:string,parent_order_number:string,payments:array<struct<bill_to_address_key:string,expiry_date:string,payment_subtype:string,payment_type:string,processed_amount:string>>,return_by_gift_recipient:string,return_order_key_for_exchange:string,save_the_sale_store_id:string,subscription_id:string,tenant_key:string,load_date:string,current_time:string>";
+        TypeDescription schema = TypeDescription.fromString(types); 
+        TypeInfo typeInfo = TypeInfoUtils.getTypeInfoFromTypeString(types);
+        objectInspector = TypeInfoUtils.getStandardJavaObjectInspectorFromTypeInfo(typeInfo);
+        this.fieldNames = schema.getFieldNames();
+        List<TypeDescription> fieldTypes = schema.getChildren();
+        this.converters = new JsonConverter[fieldTypes.size()];
+        for(int c = 0; c < converters.length; ++c) {
+            converters[c] = createConverter(fieldTypes.get(c));
+        }
+
+    }
+
+      private static JsonConverter createConverter(TypeDescription schema) {
+        switch (schema.getCategory()) {
+            case BYTE:
+            case SHORT:
+            case INT:
+            case LONG:
+            case FLOAT:
+            case DOUBLE:
+            case CHAR:
+            case VARCHAR:
+            case STRING:
+            case DECIMAL:
+            case TIMESTAMP:
+            case BINARY:
+            case BOOLEAN:
+                return new StringColumnConverter();
+            case STRUCT:
+                return new StructColumnConverter(schema);
+            case LIST:
+                return new ListColumnConverter(schema);
+            default:
+                throw new IllegalArgumentException("Unhandled type " + schema);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    static class StringColumnConverter implements JsonConverter {
+        public void convert(JsonElement value, List column , int index) {
+            if (value == null || value.isJsonNull()) {
+                    column.add(index,null);
+                } else {
+                try {
+                    //noinspection unchecked
+                    column.add(index,value.getAsString());
+                } catch (Exception e){
+                    e.printStackTrace();
+                }
+                }
+            }
+        }
+
+    @SuppressWarnings("unchecked")
+    static class StructColumnConverter implements JsonConverter {
+        private final JsonConverter[] childrenConverters;
+        private final List<String> fieldNames;
+
+        public StructColumnConverter(TypeDescription schema) {
+            List<TypeDescription> kids = schema.getChildren();
+            childrenConverters = new JsonConverter[kids.size()];
+            for(int c=0; c < childrenConverters.length; ++c) {
+                childrenConverters[c] = createConverter(kids.get(c));
+            }
+            fieldNames = schema.getFieldNames();
+        }
+        public void convert(JsonElement value, List column, int index) {
+
+            if (value == null || value.isJsonNull()) {
+                column.add(index,null);
+            } else {
+                JsonObject obj = value.getAsJsonObject();
+                List<Object> childStruct = new ArrayList<>();
+                for (int c = 0; c < childrenConverters.length; ++c) {
+                    JsonElement elem = obj.get(fieldNames.get(c));
+                    childrenConverters[c].convert(elem, childStruct, c);
+                }
+                column.add(index,childStruct);
+            }
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    static class ListColumnConverter implements JsonConverter {
+        private final JsonConverter childrenConverter;
+
+        public ListColumnConverter(TypeDescription schema) {
+            childrenConverter = createConverter(schema.getChildren().get(0));
+        }
+
+        public void convert(JsonElement value, List column, int index) {
+
+            if (value == null || value.isJsonNull()) {
+                column.add(index,null);
+            } else {
+
+                JsonArray obj = value.getAsJsonArray();
+
+                if (childrenConverter instanceof StructColumnConverter) {
+                    List<Object> childList = new ArrayList<>();
+                    for (int c = 0; c < obj.size(); ++c) {
+                        childrenConverter.convert(obj.get(c), childList, c);
+                    }
+                    column.add(index, childList);
+
+                } else {
+                    List<Object> parentList = new ArrayList<>();
+                    for (int c = 0; c < obj.size(); ++c) {
+                        parentList.add(obj.get(c));
+                    }
+                    column.add(index, parentList);
+                }
+            }
+        }
+    }
+
+
+    @Override
+    protected void map(LongWritable key, Text value, Context context) throws IOException, InterruptedException {
+    	
+    	//load_date:string,current_time:string
+    	DateFormat dateFormat = new SimpleDateFormat("dd-MM-yyyy HH:mm:ss");
+    	Calendar cal = Calendar.getInstance();
+    	//System.out.println(dateFormat.format(cal)); //19-02-2018 12:08:43
+    	
+        JsonStreamParser parser = new JsonStreamParser(value.toString());
+        JsonObject elem = parser.next().getAsJsonObject();
+        List<Object> struct = new ArrayList<>(converters.length);
+
+        for(int c=0; c < converters.length; ++c) {
+            JsonElement field = elem.get(fieldNames.get(c));
+
+            if (field.isJsonNull()) {
+                struct.add(c,null);
+            } else {
+                converters[c].convert(field, struct, c);
+            }
+
+        }
+        
+        struct.add(c,dateFormat.format(Calendar.getInstance().getTime()));
+        struct.add(c++,dateFormat.format(Calendar.getInstance()); 
+        
+        Writable row = serde.serialize(struct, objectInspector);
+        context.write(nada, row);
+    }
+}
