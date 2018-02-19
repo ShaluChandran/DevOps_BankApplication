@@ -1,0 +1,29 @@
+    @Override
+    protected void map(LongWritable key, Text value, Context context) throws IOException, InterruptedException {
+    	int c=-1;
+    	//load_date:string,current_time:string
+    	DateFormat dateFormat = new SimpleDateFormat("dd-MM-yyyy HH:mm:ss");
+    	Calendar cal = Calendar.getInstance();
+    	//System.out.println(dateFormat.format(cal)); //19-02-2018 12:08:43
+    	
+        JsonStreamParser parser = new JsonStreamParser(value.toString());
+        JsonObject elem = parser.next().getAsJsonObject();
+        List<Object> struct = new ArrayList<>(converters.length);
+
+        for(c=0; c < converters.length; ++c) {
+            JsonElement field = elem.get(fieldNames.get(c));
+
+            if (field.isJsonNull()) {
+                struct.add(c,null);
+            } else {
+                converters[c].convert(field, struct, c);
+            }
+
+        }
+        
+        struct.add(c,dateFormat.format(Calendar.getInstance().getTime()));
+        struct.add(c++,dateFormat.format(Calendar.getInstance()); 
+        
+        Writable row = serde.serialize(struct, objectInspector);
+        context.write(nada, row);
+    }
