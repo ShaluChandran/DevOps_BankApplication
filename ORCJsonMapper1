@@ -1,0 +1,205 @@
+package com.shalu.dl;
+
+import com.google.gson.*;
+import org.apache.hadoop.hive.ql.io.orc.OrcSerde;
+import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector;
+import org.apache.hadoop.hive.serde2.typeinfo.TypeInfo;
+import org.apache.hadoop.hive.serde2.typeinfo.TypeInfoUtils;
+import org.apache.hadoop.io.*;
+import org.apache.hadoop.mapreduce.Mapper;
+import org.apache.hadoop.mapreduce.lib.output.MultipleOutputs;
+import org.apache.orc.TypeDescription;
+import java.io.IOException;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.logging.Logger;
+
+
+public class ORCJsonMapper extends Mapper<LongWritable,Text,NullWritable,Writable> {
+
+    static Logger log = Logger.getLogger(ORCJsonMapper.class.getName());
+
+    private final NullWritable nada = NullWritable.get();
+    private List<String> fieldNames;
+    private JsonConverter[] converters;
+    private OrcSerde serde;
+    private ObjectInspector objectInspector;
+    private MultipleOutputs outputs;
+
+    interface JsonConverter {
+        void convert(JsonElement value, List column, int index);
+    }
+
+    @Override
+    protected void setup(Context context) throws IOException, InterruptedException {
+        super.setup(context);
+
+        serde = new OrcSerde();
+        outputs = new MultipleOutputs(context);
+        //Order String types = "struct<action:string,bill_to_address:struct<address_id:string,address_key:string,address_line1:string,address_line2:string,address_line3:string,city:string,country:string,email_id:string,first_name:string,last_name:string,middle_name:string,mobile:string,phone:string,state:string,title:string,zip_code:string>,customer:struct<bill_to_id:string,email_id:string,first_name:string,last_name:string,phone_number:string>,entry_type:string,external_order_number:string,is_purchased_as_guest:string,max_order_status:string,message_type:struct<is_bill_to_id_Change:string,is_cancellation:string,is_price_change:string,is_quantity_change:string,is_return_update:string>,min_order_status:string,modify_date:string,nominee:struct<email_id:string,first_name:string,last_name:string,phone_number:string>,oms_order_key:string,order_enteredby:string,order_lines:array<struct<backordered_shipnodes:array<struct<fulfillment_key:string,quantity:string,ship_node:string,timestamp1:string>>,channel_line_id:string,charges:array<struct<charge_level:string,charge_name:string,charge_per_line:string,charge_per_unit:string,charge_type:string,charge_value:string,reference:string>>,concessions:array<struct<concession_category:string,concession_id:string,concession_name:string,concession_per_unit:string,concession_reason_code:string,concession_reason_desc:string,concession_record_key:string>>,create_timestamp:string,derived_from_order_key:string,derived_from_order_line_key:string,discounts:array<struct<applied_promo_text:string,discount_amount:string,promo_description:string,promotion_admin_name:string,promotion_display_level:string,promotion_group:string,promotion_id:string,promotion_pvr_code:string,promotion_usage:string>>,event_destination_id:string,fulfillment_spec:struct<fulfillment_options:array<struct<auto_cancel_date:string,carrier_pick_date:string,delivery_date:string,fulfillment_key:string,must_ship_by_date:string,order_line_quantity:string,ready_for_pickup_date:string,shipment_date:string,source_node:struct<node_id:string>>>,fulfillment_type:string,guest_promised_delivery_enddate:string,guest_promised_delivery_startdate:string,guest_selected_shipment_option:string,is_back_order:string,is_pre_order:string,level_of_service:struct<service_code:string,service_name:string>,managed_delivery_date_type:string,orig_level_of_service:struct<service_code:string,service_name:string>,pick_up_window:string,ship_node:struct<node_id:string>,ship_to_address:struct<address_id:string,address_key:string,address_line1:string,address_line2:string,address_line3:string,city:string,country:string,email_id:string,first_name:string,guest_address_type:string,last_name:string,mobile:string,phone:string,state:string,title:string,zip_code:string>>,gift_card_type:string,instructions:struct<instruction_text:string,instruction_type:string>,is_gift_wrap:string,is_opt_in:string,is_pickup_extended:string,is_repromised:string,is_sts_cancel_hold:string,is_subscription:string,item:struct<dpci:string,is_bundle_parent:string,item_description:string,item_weight_uom:string,street_date:string,tcin:string,unit_of_measure:string,weight:string>,line_number:string,line_type:string,list_price:string,modify_timestamp:string,order_line_key:string,quantity:string,registry:struct<registry_id:string,registry_name:string>,relationship:string,return_details:struct<receipt_id:string,return_method:string,return_quantity:string,return_reason:string,vcd_number:string>,routing:string,statuses:array<struct<cancel_reason_code:string,cancel_reason_text:string,quantity:string,status_code:string,status_date:string,status_description:string>>,subscription_frequency:string,taxes:array<struct<tax_name:string,tax_type:string,tax_value:string>>,unit_price:string>>,order_number:string,order_placed:string,order_sub_type:string,order_type:string,parent_order_number:string,payments:array<struct<bill_to_address_key:string,card_wallet_id:string,display_credit_card_no:string,display_svc_no:string,expiry_date:string,payment_key:string,payment_reference2:string,payment_subtype:string,payment_type:string,processed_amount:string,svc_no:string>>,publish_timestamp:string,return_by_gift_recipient:string,return_order_key_for_exchange:string,save_the_sale_store_id:string,sub_action:string,subscription_id:string,tenant_key:string,curr_prcs_d:string,curr_ts:string>";
+        String types = "struct<adjustment_version:tinyint,begin_date_time:timestamp,begin_date_time_iso:timestamp,business_unit:struct<legacy_location_id:binary,location_id:binary,location_type:uniontype<>>,customer_invoice_number:uniontype<>,customer_order_number:uniontype<>,customer_shipment_number:uniontype<>,end_date_time:timestamp,end_date_time_iso:timestamp,guest_information:uniontype<>,legacy_transaction_id:string,line_items:array<struct<barcode:binary,barcode_type:string,child_order:uniontype<>,component_item:uniontype<>,dpci:string,extended_net_amount:string,inventory_removal_number:uniontype<>,inventory_tcin:string,item_voided:boolean,line_item_sequence_number:tinyint,line_item_tracking_id:string,line_item_type:binary,line_related_line_items:uniontype<>,line_related_transaction:uniontype<>,price_modifiers:array<struct<adjustment_amount:string,original_amount:string,price_modifier_name:uniontype<>,price_modifier_reason_code:binary,price_modifier_sequence_number:tinyint,price_modifier_tracking_id:uniontype<>,price_modifier_type:string,promotion_id:uniontype<>>>,quantity:string,refund_code:string,registry_number:uniontype<>,regular_unit_price:string,return_policies:array<struct<end_date:string,guest_type:string,policy_days:string,policy_id:string>>,return_reason:uniontype<>,seller_id:uniontype<>,selling_unit_price:string,serial_number:uniontype<>,service_charges:uniontype<>,tax_area_id:string,tax_class_code:string,taxes:array<struct<tax_amount:string,tax_exempt:boolean,tax_exempt_amount:string,tax_override_code:string,tax_percent:string,tax_rate_code:string,tax_sequence_number:tinyint,tax_tracking_id:uniontype<>,tax_type_code:string,tax_voided:boolean,taxable_amount:string>>,tcin:binary,unit_of_measure:string,vendor_id:string,vendor_return_financial_disposition:string,vendor_return_physical_disposition:uniontype<>,vendor_type:uniontype<>,weight:string>>,operator_id:binary,order_date:binary,origination_channel:struct<channel_id:string,company_code:string,division_code:string,fulfillment_type:string,version_id:string>,pos_log_transaction_type:string,price_modifier_summaries:uniontype<>,receipt_date_time:timestamp,register_id:binary,register_sequence_number:binary,related_transactions:uniontype<>,release_id:uniontype<>,scac:uniontype<>,ship_from_address:uniontype<>,ship_to_destination:uniontype<>,source_app:string,tax_summaries:array<struct<event_sequence_number:tinyint,tax_amount:string,tax_exempt:boolean,tax_exempt_amount:string,tax_override_code:string,tax_percent:string,tax_rate_code:string,tax_related_line_items:array<uniontype<>>,tax_source_code:string,tax_table_code:string,tax_type:string,tax_type_code:string,tax_voided:boolean,taxable_amount:string>>,tender_summaries:array<struct<authorization:struct<approval_code:uniontype<>,approval_date_time:binary,approval_id:uniontype<>,authorization_amount:string,authorization_response:uniontype<>,authorization_response_cryptogram:binary,avv:uniontype<>,cavv:uniontype<>,cavv_response_code:uniontype<>,cryptogram_code:uniontype<>,cryptogram_random_string:binary,cryptogram_type_code:binary,error_code:uniontype<>,market_specific_authorization_code:uniontype<>,pos_data_text:uniontype<>,receive_timestamp:binary,request_id:string,response_code:uniontype<>,send_timestamp:binary,service_code:uniontype<>>,bill_to_address:uniontype<>,cash_back_amount:uniontype<>,credit_information:struct<application_data:binary,application_transaction_count:binary,application_version:uniontype<>,bank_card_type:uniontype<>,card_subtype:uniontype<>,card_token:binary,cardholder_verification_result:binary,charge_count:uniontype<>,charge_sequence:uniontype<>,chip_read_flag:boolean,debit_network:uniontype<>,device_form_factor:string,expiration_month:uniontype<>,expiration_year:uniontype<>,external_token:string,interchange_profile_code:binary,merchant_type_code:uniontype<>,terminal_capability:binary,terminal_country_code:uniontype<>,terminal_serial_id:binary,terminal_verification_result:uniontype<>,token_status:uniontype<>,token_type:string,trace_audit_number:uniontype<>,transaction_type_code:binary>,currency_code:uniontype<>,gl_account:uniontype<>,merchant_id:string,order_type:uniontype<>,payment_method:uniontype<>,tender_amount:string,tender_document_number:uniontype<>,tender_entry_method:string,tender_related_line_items:uniontype<>,tender_sequence_number:tinyint,tender_tracking_id:string,tender_tran_type:binary,tender_voided:boolean>>,training_mode:boolean,transaction_id:string,transaction_net_amount:string,transaction_post_date_time:string,transaction_status:string,transaction_type_code:binary>";       
+       // String types = "struct<pos_log_transaction_type:string,legacy_transaction_id:string,transaction_id:string,transaction_post_date_time:string,source_app:string,adjustment_version:int,business_unit:struct<location_id:string,legacy_location_id:string,location_type:string>,origination_channel:struct<channel_id:string,fulfillment_type:string,division_code:string,company_code:string,version_id:string>,ship_from_address:struct<address_line:string,city:string,state:string,territory:string,postal_code:string,postal_code_extension:string>,begin_date_time:string,end_date_time:string,begin_date_time_iso:string,end_date_time_iso:string,operator_id:string,receipt_date_time:string,order_date:string,register_id:string,register_sequence_number:string,training_mode:boolean,transaction_net_amount:string,transaction_status:string,transaction_type_code:string,customer_order_number:string,customer_invoice_number:string,customer_shipment_number:string,scac:string,release_id:string,guest_information:struct<guest_tracking_id:string,first_name:string,last_name:string,email_address:string,loyalty_barcode:string,cartwheel_barcode:string,guest_profile_id:string,employee_id:string,tax_information:array<struct<organization_name:string,organization_type:string,organization_tax_id:string,organization_street_address:string,organization_city:string,organization_state:string,organization_zip_code:string,organization_country:string,organization_phone_number:string,tax_exempt_number:string,tax_exempt_type:string,purchaser_first_name:string,purchaser_last_name:string,purchaser_street_address:string,purchaser_city:string,purchaser_state:string,purchaser_zip_code:string,purchaser_country:string,purchaser_occupation:string,purchaser_id_number:string,purchaser_id_type:string,purchaser_id_state:string,purchaser_id_expiration:string,purchaser_date_of_birth:string,purchaser_ssn:string>>>,ship_to_destination:struct<store_id:string,address_line:string,city:string,state:string,territory:string,postal_code:string,postal_code_extension:string>,related_transactions:array<struct<related_type_code:string,legacy_transaction_id:string,transaction_id:string,customer_order_number:string>>,line_items:array<struct<line_item_sequence_number:int,line_item_tracking_id:string,line_item_type:string,barcode:string,barcode_type:string,serial_number:string,dpci:string,tcin:string,inventory_tcin:string,vendor_id:string,vendor_type:string,seller_id:string,weight:string,item_voided:boolean,regular_unit_price:string,quantity:string,unit_of_measure:string,selling_unit_price:string,extended_net_amount:string,tax_area_id:string,tax_class_code:string,registry_number:string,inventory_removal_number:string,vendor_return_physical_disposition:string,vendor_return_financial_disposition:string,refund_code:string,return_reason:string,return_policies:array<struct<end_date:string,guest_type:string,policy_days:string,policy_id:string>>,line_related_line_items:array<struct<line_item_tracking_id:string>>,line_related_transaction:struct<original_legacy_transaction_id:string,original_line_item_sequence_number:int>,component_item:array<struct<tcin:string>>,child_order:array<struct<child_order_location_id:string,child_order_shipment_number:string>>,service_charges:array<struct<line_item_sequence_number:int,service_charge_tracking_id:string,line_item_type:string,dpci:string,tcin:string,inventory_tcin:string,item_voided:boolean,regular_unit_price:string,quantity:string,unit_of_measure:string,selling_unit_price:string,extended_net_amount:string,tax_area_id:string,tax_class_code:string>>,price_modifiers:array<struct<price_modifier_sequence_number:int,price_modifier_tracking_id:string,price_modifier_type:string,price_modifier_name:string,price_modifier_reason_code:string,promotion_id:string,original_amount:string,adjustment_amount:string>>,taxes:array<struct<tax_sequence_number:int,tax_tracking_id:string,tax_override_code:string,tax_type_code:string,tax_percent:string,tax_rate_code:string,tax_voided:boolean,taxable_amount:string,tax_amount:string,tax_exempt:boolean,tax_exempt_amount:string>>>>,price_modifier_summaries:array<struct<price_modifier_event_sequence_number:int,price_modifier_reason_code:string,price_modifier_type:string,price_modifier_name:string,promotion_id:string,price_modifier_percent:string,price_modifier_amount:string,pre_modifier_sales_total_amount:string,price_modifier_calculation_code:string,price_modifier_voided:boolean,price_variance_reason_code:string,allocated_to_item:string,assigned_dpci:string,cartwheel_flag:string,related_line_items:array<struct<line_item_tracking_id:string>>>>,tax_summaries:array<struct<event_sequence_number:int,tax_type:string,tax_table_code:string,tax_type_code:string,tax_override_code:string,tax_percent:string,tax_rate_code:string,tax_source_code:string,tax_voided:boolean,taxable_amount:string,tax_amount:string,tax_exempt:boolean,tax_exempt_amount:string,tax_related_line_items:array<struct<line_item_tracking_id:string>>>>,tender_summaries:array<struct<tender_sequence_number:int,tender_tracking_id:string,tender_tran_type:string,merchant_id:string,order_type:string,tender_document_number:string,gl_account:string,currency_code:string,tender_amount:string,tender_entry_method:string,payment_method:string,cash_back_amount:string,tender_voided:boolean,credit_information:struct<charge_count:string,charge_sequence:string,card_token:string,external_token:string,token_type:string,token_status:string,bank_card_type:string,chip_read_flag:boolean,expiration_month:string,expiration_year:string,debit_network:string,interchange_profile_code:string,cardholder_verification_result:string,trace_audit_number:string,merchant_type_code:string,terminal_country_code:string,terminal_serial_id:string,terminal_verification_result:string,terminal_capability:string,application_version:string,application_data:string,application_transaction_count:string,device_form_factor:string,transaction_type_code:string,card_subtype:string>,authorization:struct<authorization_amount:string,authorization_response_cryptogram:string,authorization_response:string,cavv:string,cavv_response_code:string,avv:string,cryptogram_type_code:string,cryptogram_code:string,cryptogram_random_string:string,market_specific_authorization_code:string,pos_data_text:string,service_code:string,approval_code:string,approval_id:string,approval_date_time:string,error_code:string,receive_timestamp:string,response_code:string,request_id:string,send_timestamp:string>,bill_to_address:struct<address_line:string,city:string,state:string,territory:string,postal_code:string,postal_code_extension:string>,tender_related_line_items:array<struct<line_item_tracking_id:string>>>>>";
+        //String types = "struct<action:string,bill_to_address:struct<address_key:string,address_line1:string,address_line2:string,address_line3:string,city:string,country:string,email_id:string,first_name:string,last_name:string,mobile:string,phone:string,state:string,title:string,zip_code:string>,customer:struct<bill_to_id:string,email_id:string,first_name:string,last_name:string,phone_number:string>,entry_type:string,external_order_number:string,has_mp_items:string,is_gom_order:string,is_purchased_as_guest:string,loyalty_id:string,max_order_status:string,message_type:struct<is_bill_to_id_change:string,is_cancellation:string,is_price_change:string,is_quantity_change:string,is_return_update:string>,min_order_status:string,modify_date:string,nominee:struct<email_id:string,first_name:string,last_name:string>,oms_order_key:string,order_enteredby:string,order_lines:array<struct<backordered_shipnodes:array<struct<create_date:string,fulfillment_key:string,quantity:string,ship_node:string>>,channel_line_id:string,charges:array<struct<charge_level:string,charge_name:string,charge_per_line:string,charge_per_unit:string,charge_type:string,charge_value:string,reference:string>>,concessions:array<struct<concession_category:string,concession_id:string,concession_name:string,concession_per_unit:string,concession_reason_code:string,concession_reason_desc:string,concession_record_key:string>>,derived_from_order_line_key:string,discounts:array<struct<applied_promo_text:string,discount_amount:string,promo_description:string,promotion_admin_name:string,promotion_display_level:string,promotion_group:string,promotion_id:string,promotion_pvr_code:string,promotion_usage:string>>,event_destination_id:string,fulfillment_spec:struct<fulfillment_options:array<struct<auto_cancel_date:string,carrier_pick_date:string,delivery_date:string,fulfillment_key:string,must_ship_by_date:string,order_line_quantity:string,ready_for_pickup_date:string,shipment_date:string,source_node:struct<node_id:string>>>,fulfillment_type:string,guest_promised_delivery_enddate:string,guest_promised_delivery_startdate:string,guest_selected_shipment_option:string,is_back_order:string,is_pre_order:string,level_of_service:struct<service_code:string,service_name:string>,managed_delivery_date_type:string,orig_level_of_service:struct<service_code:string,service_name:string>,pick_up_window:string,ship_node:struct<node_id:string>,ship_to_address:struct<address_key:string,address_line1:string,address_line2:string,address_line3:string,city:string,country:string,email_id:string,first_name:string,guest_address_type:string,last_name:string,mobile:string,phone:string,state:string,title:string,zip_code:string>>,gift_card_type:string,instructions:struct<instruction_text:string,instruction_type:string>,is_gift_wrap:string,is_opt_in:string,is_pickup_extended:string,is_repromised:string,is_sts_cancel_hold:string,is_subscription:string,is_two_day_ship_eligible:string,item:struct<dpci:string,is_bundle_parent:string,item_description:string,item_weight_uom:string,street_date:string,tcin:string,unit_of_measure:string,weight:string>,line_number:string,line_type:string,list_price:string,order_line_key:string,quantity:string,registry:struct<registry_id:string,registry_name:string>,relationship:struct<parent_order_line_id:string,relation_ship:string>,return_details:struct<receive_by_date:string,return_by_date:string,return_by_gift_recepient:string,return_comment:string,return_method:string,return_quantity:string,return_reason:string,sale_receipt_id:string,ship_advice_number:string,vcd_number:string>,routing:string,seller_id:string,statuses:array<struct<cancel_reason_code:string,cancel_reason_text:string,quantity:string,status_code:string,status_date:string,status_description:string>>,subscription_frequency:string,taxes:array<struct<tax_name:string,tax_type:string,tax_value:string>>,unit_price:string>>,order_number:string,order_placed:string,order_sub_type:string,order_type:string,parent_order_number:string,payments:array<struct<bill_to_address_key:string,card_wallet_id:string,credit_card_no:string,display_credit_card_no:string,display_svc_no:string,encryption_system:string,expiry_date:string,payment_key:string,payment_subtype:string,payment_type:string,processed_amount:string,svc_no:string>>,publish_date:string,return_by_gift_recipient:string,return_order_key_for_exchange:string,return_store_id:string,save_the_sale_store_id:string,sub_action:string,subscription_id:string,tenant_key:string,btch_loadts:string,btch_loaddate:string>";
+        TypeDescription schema = TypeDescription.fromString(types);
+        TypeInfo typeInfo = TypeInfoUtils.getTypeInfoFromTypeString(types);
+        objectInspector = TypeInfoUtils.getStandardJavaObjectInspectorFromTypeInfo(typeInfo);
+        this.fieldNames = schema.getFieldNames();
+        List<TypeDescription> fieldTypes = schema.getChildren();
+        this.converters = new JsonConverter[fieldTypes.size()];
+        for(int c = 0; c < converters.length; ++c) {
+            converters[c] = createConverter(fieldTypes.get(c));
+        }
+
+    }
+
+    @Override
+    public void cleanup(Context context) throws IOException, InterruptedException
+    {
+        outputs.close();
+    }
+
+    private static JsonConverter createConverter(TypeDescription schema) {
+        switch (schema.getCategory()) {
+            case BYTE:
+            case SHORT:
+            case INT:
+            case LONG:
+            case FLOAT:
+            case DOUBLE:
+            case CHAR:
+            case VARCHAR:
+            case STRING:
+            case DECIMAL:
+            case TIMESTAMP:
+            case BINARY:
+            case BOOLEAN:
+                return new StringColumnConverter();
+            case STRUCT:
+                return new StructColumnConverter(schema);
+            case LIST:
+                return new ListColumnConverter(schema);
+            default:
+                throw new IllegalArgumentException("Unhandled type " + schema);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    static class StringColumnConverter implements JsonConverter {
+        public void convert(JsonElement value, List column , int index) {
+            if (value == null || value.isJsonNull()) {
+                column.add(index,null);
+            } else {
+                try {
+                    //noinspection unchecked
+                    column.add(index,value.getAsString());
+                } catch (Exception e){
+                    e.printStackTrace();
+                }
+            }
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    static class StructColumnConverter implements JsonConverter {
+        private final JsonConverter[] childrenConverters;
+        private final List<String> fieldNames;
+
+        public StructColumnConverter(TypeDescription schema) {
+            List<TypeDescription> kids = schema.getChildren();
+            childrenConverters = new JsonConverter[kids.size()];
+            for(int c=0; c < childrenConverters.length; ++c) {
+                childrenConverters[c] = createConverter(kids.get(c));
+            }
+            fieldNames = schema.getFieldNames();
+        }
+        public void convert(JsonElement value, List column, int index) {
+
+            if (value == null || value.isJsonNull()) {
+                column.add(index,null);
+            } else {
+                JsonObject obj = value.getAsJsonObject();
+                List<Object> childStruct = new ArrayList<>();
+                for (int c = 0; c < childrenConverters.length; ++c) {
+                    JsonElement elem = obj.get(fieldNames.get(c));
+                    childrenConverters[c].convert(elem, childStruct, c);
+                }
+                column.add(index,childStruct);
+            }
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    static class ListColumnConverter implements JsonConverter {
+        private final JsonConverter childrenConverter;
+
+        public ListColumnConverter(TypeDescription schema) {
+            childrenConverter = createConverter(schema.getChildren().get(0));
+        }
+
+        public void convert(JsonElement value, List column, int index) {
+
+            if (value == null || value.isJsonNull()) {
+                column.add(index,null);
+            } else {
+
+                JsonArray obj = value.getAsJsonArray();
+
+                if (childrenConverter instanceof StructColumnConverter) {
+                    List<Object> childList = new ArrayList<>();
+                    for (int c = 0; c < obj.size(); ++c) {
+                        childrenConverter.convert(obj.get(c), childList, c);
+                    }
+                    column.add(index, childList);
+
+                } else {
+                    List<Object> parentList = new ArrayList<>();
+                    for (int c = 0; c < obj.size(); ++c) {
+                        parentList.add(obj.get(c));
+                    }
+                    column.add(index, parentList);
+                }
+            }
+        }
+    }
+
+
+    @Override
+    protected void map(LongWritable key, Text value, Context context) throws IOException, InterruptedException {
+
+        List<Object> struct = null;
+        boolean badRecord = false;
+
+        try {
+            JsonStreamParser parser = new JsonStreamParser(value.toString());
+            JsonObject elem = parser.next().getAsJsonObject();
+            elem.addProperty("btch_loadts", DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").format(LocalDateTime.now()));
+            elem.addProperty("btch_loaddate", DateTimeFormatter.ofPattern("yyyy-MM-dd").format(LocalDate.now()));
+            struct = new ArrayList<>(converters.length);
+
+            for(int c=0; c < converters.length; ++c) {
+                JsonElement field = elem.get(fieldNames.get(c));
+
+                if (field==null || field.isJsonNull()) {
+                    struct.add(c,null);
+                } else {
+                    converters[c].convert(field, struct, c);
+                }
+
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            badRecord = true;
+        }
+
+        if (!badRecord) {
+            Writable row = serde.serialize(struct, objectInspector);
+            outputs.write("SUCCESS", nada, row);
+        } else {
+            outputs.write("ERROR", nada, new Text(value.toString()), "ERROR/" + DateTimeFormatter.ofPattern("yyyy-MM-dd").format(LocalDate.now()) + "/");
+            log.info("Bad Record:" +value);
+        }
+    }
+}
